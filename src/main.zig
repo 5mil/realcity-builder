@@ -1,6 +1,8 @@
 const std = @import("std");
 const rl = @import("raylib");
 
+const SAVE_VERSION: u32 = 1;
+
 const TileType = enum(u8) { grass, road, water, building };
 const Building = struct {
     name: []const u8,
@@ -36,50 +38,68 @@ fn simulate(buildings: *std.ArrayList(Building), totalPop: *u32) void {
     }
 }
 
-// Improved Save/Load with basic serialization
-const SaveData = struct {
-    funds: i32,
-    buildings: []Building,
-};
-
+// Fast Binary Save/Load
 fn saveCity(allocator: std.mem.Allocator, buildings: *const std.ArrayList(Building)) !void {
-    const data = SaveData{ .funds = funds, .buildings = buildings.items };
-    const json_str = std.json.stringifyAlloc(allocator, data, .{}) catch |err| {
-        std.debug.print("JSON error: {}\n", .{err});
-        return;
-    };
-    defer allocator.free(json_str);
-
-    const file = try std.fs.cwd().createFile("city_save.json", .{});
+    const file = try std.fs.cwd().createFile("city_save.bin", .{});
     defer file.close();
-    try file.writeAll(json_str);
-    std.debug.print("💾 City saved successfully to city_save.json ({d} buildings)\n", .{buildings.items.len});
+    const writer = file.writer();
+
+    try writer.writeInt(u32, SAVE_VERSION, .little);
+    try writer.writeInt(i32, funds, .little);
+    try writer.writeInt(u32, @as(u32, @intCast(buildings.items.len)), .little);
+
+    for (buildings.items) |b| {
+        try writer.writeInt(u32, @as(u32, @intCast(b.name.len)), .little);
+        try writer.writeAll(b.name);
+        try writer.writeInt(u32, b.pos_x, .little);
+        try writer.writeInt(u32, b.pos_y, .little);
+        try writer.writeInt(u32, b.size_x, .little);
+        try writer.writeInt(u32, b.size_y, .little);
+        try writer.writeInt(u32, b.population, .little);
+        try writer.writeInt(u32, b.cost, .little);
+    }
+
+    std.debug.print("💾 Binary save complete! ({d} buildings)\n", .{buildings.items.len});
 }
 
 fn loadCity(allocator: std.mem.Allocator, buildings: *std.ArrayList(Building), grid: []TileType) !void {
-    const file = std.fs.cwd().openFile("city_save.json", .{}) catch |err| {
-        std.debug.print("No save file found ({})\n", .{err});
+    const file = std.fs.cwd().openFile("city_save.bin", .{}) catch |err| {
+        std.debug.print("No save file ({})\n", .{err});
         return;
     };
     defer file.close();
 
-    const content = try file.readToEndAlloc(allocator, 1024*1024);
-    defer allocator.free(content);
+    const reader = file.reader();
+    const version = try reader.readInt(u32, .little);
+    if (version != SAVE_VERSION) return error.VersionMismatch;
 
-    const parsed = try std.json.parseFromSlice(SaveData, allocator, content, .{});
-    defer parsed.deinit();
+    funds = try reader.readInt(i32, .little);
+    const numBuildings = try reader.readInt(u32, .little);
 
-    funds = parsed.value.funds;
     buildings.clearRetainingCapacity();
-    for (parsed.value.buildings) |b| {
+    for (0..numBuildings) |_| {
+        const nameLen = try reader.readInt(u32, .little);
+        const name = try allocator.alloc(u8, nameLen);
+        defer allocator.free(name);
+        _ = try reader.readAll(name);
+
+        const b = Building{
+            .name = try allocator.dupe(u8, name),
+            .pos_x = try reader.readInt(u32, .little),
+            .pos_y = try reader.readInt(u32, .little),
+            .size_x = try reader.readInt(u32, .little),
+            .size_y = try reader.readInt(u32, .little),
+            .population = try reader.readInt(u32, .little),
+            .cost = try reader.readInt(u32, .little),
+        };
         try buildings.append(b);
-        // Restore grid tiles
+
         for (0..b.size_y) |dy| for (0..b.size_x) |dx| {
             const idx = (b.pos_y + dy) * GRID_WIDTH + (b.pos_x + dx);
             if (idx < grid.len) grid[idx] = .building;
         }
     }
-    std.debug.print("📂 City loaded! {d} buildings restored.\n", .{buildings.items.len});
+    std.debug.print("📂 Binary load complete! {d} buildings\n", .{buildings.items.len});
 }
 
 pub fn main() !void {
@@ -97,7 +117,6 @@ pub fn main() !void {
     defer allocator.free(grid); @memset(grid, .grass);
     loadMockOSM(grid);
 
-    // Map generation...
     for (0..GRID_WIDTH) |x| { grid[45*GRID_WIDTH+x]=.road; grid[72*GRID_WIDTH+x]=.road; }
     for (0..GRID_HEIGHT) |y| { grid[y*GRID_WIDTH+55]=.road; grid[y*GRID_WIDTH+85]=.road; }
     for (20..45) |y| for (100..125) |x| grid[y*GRID_WIDTH+x] = .water;
@@ -111,7 +130,6 @@ pub fn main() !void {
     var frame: u32 = 0;
     const weather = getMockWeather();
 
-    // Try auto-load on start
     loadCity(allocator, &buildings, grid) catch {};
 
     while (!rl.windowShouldClose()) {
@@ -172,7 +190,7 @@ pub fn main() !void {
         rl.endMode2D();
 
         rl.drawText(rl.textFormat("Funds: ${d} | Pop: {d} | {s} | BP: {s} (1-3) | S:Save L:Load", .{funds, totalPop, weather, blueprints[selectedBP].name}), 10, 10, 20, rl.Color.lime);
-        rl.drawText("LMB build | WASD pan | Wheel zoom | L to load save", 10, 40, 18, rl.Color.white);
+        rl.drawText("LMB build | WASD pan | Wheel zoom", 10, 40, 18, rl.Color.white);
         rl.drawFPS(1050, 10);
     }
 }
