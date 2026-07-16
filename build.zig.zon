@@ -1,0 +1,15 @@
+.{ 
+    .name = "realcity-builder",
+    .version = "0.1.0",
+    .dependencies = .{
+        .raylib_zig = .{
+            .url = "git+https://github.com/raylib-zig/raylib-zig#devel",
+            .hash = "1220f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
