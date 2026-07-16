@@ -16,6 +16,18 @@ const GRID_WIDTH: usize = 100;
 const GRID_HEIGHT: usize = 80;
 const TILE_SIZE: f32 = 20.0;
 
+// Stub for OSM loader
+fn loadMockOSM(grid: []TileType) void {
+    // In future: parse real OSM XML/JSON for roads, water, buildings
+    std.debug.print("[OSM] Mock real map data loaded.\n", .{});
+}
+
+// Stub for weather
+fn getMockWeather() []const u8 {
+    // Future: HTTP call to OpenWeatherMap or similar
+    return "Sunny, 72°F";
+}
+
 pub fn main() !void {
     const screenWidth = 1280;
     const screenHeight = 720;
@@ -25,7 +37,6 @@ pub fn main() !void {
 
     rl.setTargetFPS(60);
 
-    // Camera
     var camera = rl.Camera2D{
         .target = rl.Vector2{ .x = @as(f32, @floatFromInt(GRID_WIDTH)) * TILE_SIZE / 2.0, .y = @as(f32, @floatFromInt(GRID_HEIGHT)) * TILE_SIZE / 2.0 },
         .offset = rl.Vector2{ .x = @as(f32, @floatFromInt(screenWidth)) / 2.0, .y = @as(f32, @floatFromInt(screenHeight)) / 2.0 },
@@ -37,6 +48,8 @@ pub fn main() !void {
     defer std.heap.page_allocator.free(grid);
     @memset(grid, .grass);
 
+    loadMockOSM(grid);
+
     // Mock OSM-style map
     for (0..GRID_WIDTH) |x| {
         grid[35 * GRID_WIDTH + x] = .road;
@@ -46,7 +59,6 @@ pub fn main() !void {
         grid[y * GRID_WIDTH + 40] = .road;
         grid[y * GRID_WIDTH + 60] = .road;
     }
-    // Some water
     for (10..30) |y| {
         for (70..90) |x| grid[y * GRID_WIDTH + x] = .water;
     }
@@ -54,10 +66,11 @@ pub fn main() !void {
     var buildings = std.ArrayList(Building).init(std.heap.page_allocator);
     defer buildings.deinit();
 
-    std.debug.print("=== RealCity Builder Zig + Raylib ===\n", .{});
+    const weather = getMockWeather();
+    std.debug.print("=== RealCity Builder Zig + Raylib ===\nWeather: {s}\n", .{weather});
 
     while (!rl.windowShouldClose()) {
-        // Update
+        // Update (camera, input, etc. same as before)
         if (rl.isMouseButtonDown(.mouse_button_left)) {
             const worldPos = rl.getScreenToWorld2D(rl.getMousePosition(), camera);
             const gridX = @as(u32, @intFromFloat(worldPos.x / TILE_SIZE));
@@ -72,13 +85,11 @@ pub fn main() !void {
                     .population = 120,
                     .cost = 5000,
                 });
-                // Mark as building for rendering
                 const idx = gridY * GRID_WIDTH + gridX;
                 if (idx < grid.len) grid[idx] = .building;
             }
         }
 
-        // Camera controls
         if (rl.isKeyDown(.key_right) or rl.isKeyDown(.key_d)) camera.target.x += 10;
         if (rl.isKeyDown(.key_left) or rl.isKeyDown(.key_a)) camera.target.x -= 10;
         if (rl.isKeyDown(.key_down) or rl.isKeyDown(.key_s)) camera.target.y += 10;
@@ -93,7 +104,6 @@ pub fn main() !void {
             if (camera.zoom > 5.0) camera.zoom = 5.0;
         }
 
-        // Draw
         rl.beginDrawing();
         defer rl.endDrawing();
 
@@ -101,7 +111,6 @@ pub fn main() !void {
 
         rl.beginMode2D(camera);
 
-        // Render grid
         for (0..GRID_HEIGHT) |y| {
             for (0..GRID_WIDTH) |x| {
                 const tile = grid[y * GRID_WIDTH + x];
@@ -120,7 +129,6 @@ pub fn main() !void {
             }
         }
 
-        // Render buildings
         for (buildings.items) |b| {
             const rect = rl.Rectangle{
                 .x = @as(f32, @floatFromInt(b.pos_x)) * TILE_SIZE,
@@ -134,8 +142,8 @@ pub fn main() !void {
 
         rl.endMode2D();
 
-        // UI
-        rl.drawText("RealCity Builder - Click to place buildings | WASD/Mouse to pan | Wheel to zoom", 10, 10, 20, rl.Color.white);
-        rl.drawFPS(10, 40);
+        rl.drawText("RealCity Builder | Click to place | WASD/Mouse pan | Wheel zoom | Weather stub active", 10, 10, 20, rl.Color.white);
+        rl.drawText(weather, 10, 40, 20, rl.Color.yellow);
+        rl.drawFPS(10, 70);
     }
 }
