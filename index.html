@@ -1,71 +1,151 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>RealCity Builder Web Demo</title>
-<style>body { margin:0; background:#111; color:#eee; font-family:sans-serif; } canvas { border:1px solid #444; } .controls { padding:10px; } </style>
+<meta charset="UTF-8">
+<title>RealCity Builder — Web Demo (Graphical 3D-ish)</title>
+<style>
+  body { margin:0; background:#0a0a1a; color:#ddd; font-family: system-ui, sans-serif; }
+  #game { border: 3px solid #334; box-shadow: 0 0 30px #112; }
+  .ui { position:absolute; top:20px; left:20px; background:rgba(0,0,0,0.7); padding:15px; border-radius:12px; }
+  button { margin:4px; padding:8px 16px; background:#334; color:#fff; border:none; border-radius:6px; cursor:pointer; }
+  button:hover { background:#556; }
+  .stat { font-size:13px; margin-top:8px; color:#8cf; }
+</style>
 </head>
 <body>
-<h1>RealCity Builder - Web Demo (GitHub Pages)</h1>
-<canvas id="game" width="800" height="600"></canvas>
-<div class="controls">
-<button onclick="place('power')">Power Plant</button>
-<button onclick="place('water')">Water Pump</button>
-<button onclick="place('res')">Residential</button>
-<button onclick="place('com')">Commercial</button>
-<button onclick="simulate()">Simulate Step</button>
+<canvas id="game" width="960" height="720"></canvas>
+<div class="ui">
+  <h2 style="margin:0 0 10px 0; font-size:18px;">🏙️ RealCity Builder</h2>
+  <div>
+    <button onclick="mode='power'">⚡ Power Plant</button>
+    <button onclick="mode='water'">💧 Water Pump</button>
+    <button onclick="mode='res'">🏠 Residential</button>
+    <button onclick="mode='com'">🏢 Commercial</button>
+    <button onclick="mode='road'">🛣️ Road</button>
+  </div>
+  <button onclick="simulate()" style="background:#0a8; width:100%; margin-top:8px;">▶ Simulate Step</button>
+  <div class="stat" id="stats">Time: 0.0 | Pop: 0 | Happiness: 50</div>
 </div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const GRID = 20;
-const TILE = 30;
-let grid = Array(GRID*GRID).fill('grass');
+const W = 32, H = 24, TILE = 28;
+let grid = Array(W*H).fill('grass');
 let buildings = [];
-let time = 0;
+let timeOfDay = 0;
+let totalPop = 0;
+let mode = 'res';
+
+function idx(x,y){ return y*W + x; }
 
 function draw() {
-  ctx.fillStyle = '#222';
+  ctx.fillStyle = '#112';
   ctx.fillRect(0,0,canvas.width,canvas.height);
-  for(let y=0; y<GRID; y++) for(let x=0; x<GRID; x++) {
-    const i = y*GRID + x;
-    ctx.fillStyle = grid[i]==='power' ? '#0af' : grid[i]==='water' ? '#0cf' : grid[i]==='res' ? '#8f8' : grid[i]==='com' ? '#fa8' : '#4a4';
-    ctx.fillRect(x*TILE, y*TILE, TILE-1, TILE-1);
+
+  // Isometric / pseudo-3D grid
+  for(let y=0; y<H; y++) {
+    for(let x=0; x<W; x++) {
+      const i = idx(x,y);
+      const type = grid[i];
+      const isoX = (x - y) * TILE * 0.6 + canvas.width/2 - 200;
+      const isoY = (x + y) * TILE * 0.35 + 80;
+
+      // Ground / tile
+      ctx.fillStyle = type==='power' ? '#0af' : type==='water' ? '#08f' : type==='road' ? '#555' : type==='res' ? '#3a5' : type==='com' ? '#a53' : '#2a3';
+      ctx.beginPath();
+      ctx.moveTo(isoX, isoY);
+      ctx.lineTo(isoX + TILE*0.6, isoY + TILE*0.35);
+      ctx.lineTo(isoX, isoY + TILE*0.7);
+      ctx.lineTo(isoX - TILE*0.6, isoY + TILE*0.35);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#334';
+      ctx.stroke();
+
+      // Simple 3D building effect
+      if(type === 'res' || type === 'com' || type === 'power' || type === 'water') {
+        const h = (type==='com' ? 18 : type==='power' ? 22 : 12);
+        ctx.fillStyle = type==='power' ? '#08f' : type==='water' ? '#0cf' : type==='com' ? '#c63' : '#4a7';
+        ctx.fillRect(isoX - 8, isoY - h, 16, h);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillRect(isoX - 8, isoY - h, 16, 4);
+      }
+    }
   }
-  // Draw buildings
-  buildings.forEach(b => {
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(b.x*TILE+2, b.y*TILE+2, TILE-4, TILE-4);
-  });
-  ctx.fillStyle = '#fff';
-  ctx.fillText('Time: ' + time.toFixed(1), 10, 20);
+
+  // Night lighting effect
+  const night = Math.sin(timeOfDay * Math.PI * 2) * 0.4 + 0.6;
+  ctx.fillStyle = `rgba(0,0,40,${1-night})`;
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Stats
+  document.getElementById('stats').innerHTML = `Time: ${timeOfDay.toFixed(1)} | Pop: ${totalPop} | Happiness: ${Math.floor(50 + totalPop/10)}`;
 }
 
-function place(type) {
-  const rect = canvas.getBoundingClientRect();
-  canvas.onclick = (e) => {
-    const x = Math.floor((e.clientX - rect.left)/TILE);
-    const y = Math.floor((e.clientY - rect.top)/TILE);
-    const i = y*GRID + x;
-    if(type==='power' || type==='water') grid[i] = type;
-    else {
-      buildings.push({x,y,type});
-      grid[i] = type;
-    }
-    draw();
-    canvas.onclick = null;
-  };
+function placeAt(x,y) {
+  if(x<0||x>=W||y<0||y>=H) return;
+  const i = idx(x,y);
+  if(mode === 'power' || mode === 'water' || mode === 'road') {
+    grid[i] = mode;
+  } else {
+    grid[i] = mode;
+    buildings.push({x,y,type:mode, pop: mode==='res'? 20 : 8});
+  }
+  draw();
 }
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  // Convert screen to rough grid (simple hit test)
+  for(let yy=0; yy<H; yy++) for(let xx=0; xx<W; xx++) {
+    const isoX = (xx - yy) * TILE * 0.6 + canvas.width/2 - 200;
+    const isoY = (xx + yy) * TILE * 0.35 + 80;
+    if(Math.abs(mx - isoX)<TILE*0.6 && Math.abs(my - isoY)<TILE*0.5) {
+      placeAt(xx,yy);
+      return;
+    }
+  }
+});
 
 function simulate() {
-  time += 0.1;
+  timeOfDay = (timeOfDay + 0.08) % 1;
+  totalPop = 0;
   buildings.forEach(b => {
-    if(b.type==='res') b.pop = (b.pop||0) + (grid[b.x*GRID + b.y] ? 2 : 1);
+    const powered = grid[idx(b.x,b.y)] === 'power' || Math.random()>0.6;
+    const watered = grid[idx(b.x,b.y)] === 'water' || Math.random()>0.5;
+    if(b.type==='res' && powered && watered) {
+      b.pop += 3;
+    } else if(b.type==='com') {
+      b.pop += 1;
+    }
+    totalPop += b.pop || 0;
   });
   draw();
 }
 
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if(e.key==='p') mode='power';
+  if(e.key==='w') mode='water';
+  if(e.key==='r') mode='road';
+  if(e.key==='s') simulate();
+  if(e.key===' ') { mode = mode==='res'?'com':'res'; }
+});
+
+// Initial demo state
+for(let i=0;i<12;i++) {
+  const x = 8 + (i%4), y=6 + Math.floor(i/4);
+  grid[idx(x,y)] = 'res';
+  buildings.push({x,y,type:'res',pop:25});
+}
+grid[idx(10,8)] = 'power';
+grid[idx(12,9)] = 'water';
+
 draw();
-alert('Click a button then click grid to place. Simulate for growth.');
+setInterval(() => { if(Math.random()<0.3) simulate(); }, 1800);
+console.log('%c[RealCity Demo] Click grid after selecting mode. Keyboard: P/W/R/Space/S', 'color:#8cf');
 </script>
 </body>
 </html>
