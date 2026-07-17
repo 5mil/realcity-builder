@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>RealCity Builder Web Demo</title>
+<style>body { margin:0; background:#111; color:#eee; font-family:sans-serif; } canvas { border:1px solid #444; } .controls { padding:10px; } </style>
+</head>
+<body>
+<h1>RealCity Builder - Web Demo (GitHub Pages)</h1>
+<canvas id="game" width="800" height="600"></canvas>
+<div class="controls">
+<button onclick="place('power')">Power Plant</button>
+<button onclick="place('water')">Water Pump</button>
+<button onclick="place('res')">Residential</button>
+<button onclick="place('com')">Commercial</button>
+<button onclick="simulate()">Simulate Step</button>
+</div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const GRID = 20;
+const TILE = 30;
+let grid = Array(GRID*GRID).fill('grass');
+let buildings = [];
+let time = 0;
+
+function draw() {
+  ctx.fillStyle = '#222';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  for(let y=0; y<GRID; y++) for(let x=0; x<GRID; x++) {
+    const i = y*GRID + x;
+    ctx.fillStyle = grid[i]==='power' ? '#0af' : grid[i]==='water' ? '#0cf' : grid[i]==='res' ? '#8f8' : grid[i]==='com' ? '#fa8' : '#4a4';
+    ctx.fillRect(x*TILE, y*TILE, TILE-1, TILE-1);
+  }
+  // Draw buildings
+  buildings.forEach(b => {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(b.x*TILE+2, b.y*TILE+2, TILE-4, TILE-4);
+  });
+  ctx.fillStyle = '#fff';
+  ctx.fillText('Time: ' + time.toFixed(1), 10, 20);
+}
+
+function place(type) {
+  const rect = canvas.getBoundingClientRect();
+  canvas.onclick = (e) => {
+    const x = Math.floor((e.clientX - rect.left)/TILE);
+    const y = Math.floor((e.clientY - rect.top)/TILE);
+    const i = y*GRID + x;
+    if(type==='power' || type==='water') grid[i] = type;
+    else {
+      buildings.push({x,y,type});
+      grid[i] = type;
+    }
+    draw();
+    canvas.onclick = null;
+  };
+}
+
+function simulate() {
+  time += 0.1;
+  buildings.forEach(b => {
+    if(b.type==='res') b.pop = (b.pop||0) + (grid[b.x*GRID + b.y] ? 2 : 1);
+  });
+  draw();
+}
+
+draw();
+alert('Click a button then click grid to place. Simulate for growth.');
+</script>
+</body>
+</html>
